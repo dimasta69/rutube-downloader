@@ -5,7 +5,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: rutube_loader:latest
+      platforms:
+        - linux/arm64
+    image: rutube_loader:arm64
     container_name: rutube_app
     ports:
       - "8000:8000"

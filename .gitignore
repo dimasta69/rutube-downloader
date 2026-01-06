@@ -25,3 +25,7 @@ uv.lock
 .DS_Store
 Thumbs.db
 
+# Архивы
+rutube-downloader.tar
+*.tar
+

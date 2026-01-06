@@ -2,6 +2,9 @@
 
 Скрипт для скачивания видео с сайта Rutube.ru
 
+> **⚠️ Внимание:** Эта ветка (`arm-support`) настроена для ARM архитектуры (Nano Pi, Raspberry Pi, OpenWrt).  
+> Для x86_64 используйте ветку [`main`](../main).
+
 ## Установка
 
 1. Установите зависимости:
@@ -47,10 +50,15 @@ uv run python rutube_downloader.py https://rutube.ru/video/55f0ce41c0a5adc5b5b26
 
 ## Docker
 
-### Сборка образа
+**Примечание:** Эта ветка настроена для ARM архитектуры (Nano Pi, Raspberry Pi). Для x86_64 используйте ветку `main`.
+
+### Сборка образа для ARM
 
 ```bash
-docker build --platform linux/amd64 -t rutube_loader .
+docker build --platform linux/arm64 -t rutube_loader:arm64 .
+
+# Или используйте docker-compose
+docker-compose build
 ```
 
 ### Запуск контейнера
@@ -75,13 +83,15 @@ docker-compose up -d
 docker run -d -p 8000:8000 \
   -e DOWNLOAD_PATH=/app/downloads \
   --name rutube_app \
-  rutube_loader
+  --platform linux/arm64 \
+  rutube_loader:arm64
 
 # Или с файлом .env
 docker run -d -p 8000:8000 \
   --env-file .env \
+  --platform linux/arm64 \
   --name rutube_app \
-  rutube_loader
+  rutube_loader:arm64
 ```
 
 ### Управление переменными окружения
@@ -128,4 +138,45 @@ DOWNLOAD_PATH=/app/downloads
 ```
 
 Приложение будет доступно по адресу: `http://localhost:8000`
+
+### Docker для Nano Pi на OpenWrt
+
+#### Особенности работы на OpenWrt:
+
+1. **Установка Docker на OpenWrt:**
+   ```bash
+   opkg update
+   opkg install docker docker-compose
+   ```
+
+2. **Проверка архитектуры:**
+   ```bash
+   uname -m
+   # Должно показать aarch64 (для ARM64) или armv7l (для ARMv7)
+   ```
+
+3. **Сборка образа для Nano Pi:**
+   ```bash
+   # Для ARM64 (большинство современных Nano Pi)
+   docker build -f Dockerfile.arm --platform linux/arm64 -t rutube_loader:arm64 .
+   
+   # Для ARMv7 (старые модели)
+   # Измените в Dockerfile.arm: FROM --platform=linux/arm/v7 debian:bookworm-slim
+   ```
+
+4. **Запуск на OpenWrt:**
+   ```bash
+   docker-compose -f docker-compose.arm.yml up -d
+   ```
+
+#### Важные замечания для OpenWrt:
+
+- **Ресурсы:** OpenWrt устройства обычно имеют ограниченную память и место. Убедитесь, что у вас достаточно места (минимум 2-3 GB свободного места).
+- **Playwright на ARM:** Установка Chromium для Playwright на ARM может занять много времени и места. Если возникают проблемы, можно попробовать использовать альтернативные методы без headless браузера.
+- **Производительность:** На ARM процессорах приложение может работать медленнее, чем на x86_64.
+- **Сеть:** Убедитесь, что OpenWrt имеет доступ к интернету для скачивания зависимостей и видео.
+
+#### Альтернатива без Playwright (если возникают проблемы):
+
+Если Playwright не работает на вашем устройстве, можно модифицировать код для использования только `requests` библиотеки, но это потребует изменений в логике получения данных с Rutube.
 

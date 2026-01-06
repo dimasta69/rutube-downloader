@@ -1,19 +1,24 @@
-# Используем базовый образ Ubuntu
-FROM ubuntu:22.04
+# Базовый образ для ARM архитектуры (Nano Pi)
+# Используем Debian slim для меньшего размера образа
+FROM --platform=linux/arm64 debian:bookworm-slim
 
-# Устанавливаем Python 3.11 и необходимые инструменты
+# Устанавливаем Python 3 и необходимые инструменты
+# Используем python3 из репозитория (обычно 3.11+ в Debian bookworm)
 RUN apt-get update && apt-get install -y \
-    python3.11 \
-    python3.11-dev \
+    python3 \
+    python3-dev \
     python3-pip \
+    python3-venv \
     curl \
     wget \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Создаем символическую ссылку для python (python3 уже существует)
-RUN ln -sf /usr/bin/python3.11 /usr/bin/python
+# Создаем символическую ссылку для python
+RUN ln -sf /usr/bin/python3 /usr/bin/python
 
 # Устанавливаем системные зависимости для playwright и других инструментов
+# Для ARM архитектуры некоторые пакеты могут иметь другие имена
 RUN apt-get update && apt-get install -y \
     libnss3 \
     libnspr4 \
@@ -31,6 +36,9 @@ RUN apt-get update && apt-get install -y \
     libasound2 \
     libpango-1.0-0 \
     libcairo2 \
+    fonts-liberation \
+    libappindicator3-1 \
+    xdg-utils \
     && rm -rf /var/lib/apt/lists/*
 
 # Устанавливаем uv
@@ -47,7 +55,10 @@ COPY . .
 RUN if [ -f uv.lock ]; then uv sync --frozen; else uv sync; fi
 
 # Устанавливаем браузеры для playwright
-RUN uv run playwright install --with-deps chromium
+# Для ARM может потребоваться больше времени и места
+RUN uv run playwright install --with-deps chromium || \
+    (echo "Playwright install failed, trying without deps..." && \
+     uv run playwright install chromium)
 
 # Открываем порт для FastAPI
 EXPOSE 8000
@@ -55,6 +66,7 @@ EXPOSE 8000
 # Устанавливаем переменные окружения
 ENV PYTHONUNBUFFERED=1
 ENV PATH="/app/.venv/bin:$PATH"
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
 # Запускаем приложение через uvicorn
 CMD ["uv", "run", "uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
