@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RuTube Video Downloader</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎥 RuTube Video Downloader</h1>
+            <p class="subtitle">Скачайте видео с RuTube быстро и легко</p>
+        </header>
+
+        <main>
+            <div class="download-section">
+                <form id="downloadForm" class="download-form">
+                    <div class="input-group">
+                        <label for="videoUrl">URL видео RuTube:</label>
+                        <input 
+                            type="url" 
+                            id="videoUrl" 
+                            name="url" 
+                            placeholder="https://rutube.ru/video/..." 
+                            required
+                            autocomplete="off"
+                        >
+                    </div>
+                    <button type="submit" id="downloadBtn" class="btn btn-primary">
+                        <span class="btn-text">Скачать видео</span>
+                        <span class="btn-loader" style="display: none;">
+                            <span class="spinner"></span>
+                        </span>
+                    </button>
+                </form>
+
+                <div id="statusContainer" class="status-container" style="display: none;">
+                    <div class="status-header">
+                        <h2>Статус загрузки</h2>
+                        <button id="closeStatusBtn" class="close-btn" aria-label="Закрыть">×</button>
+                    </div>
+                    <div class="status-content">
+                        <div class="status-message" id="statusMessage">Инициализация...</div>
+                        <div class="progress-container">
+                            <div class="progress-bar">
+                                <div class="progress-fill" id="progressFill" style="width: 0%"></div>
+                            </div>
+                            <div class="progress-text" id="progressText">0%</div>
+                        </div>
+                        <div class="status-details" id="statusDetails"></div>
+                    </div>
+                </div>
+
+                <div id="errorContainer" class="error-container" style="display: none;">
+                    <div class="error-message" id="errorMessage"></div>
+                    <button id="closeErrorBtn" class="btn btn-secondary">Закрыть</button>
+                </div>
+            </div>
+        </main>
+
+        <footer>
+            <p>Просто вставьте ссылку на видео и нажмите кнопку "Скачать"</p>
+        </footer>
+    </div>
+
+    <script src="/static/script.js"></script>
+</body>
+</html>
+

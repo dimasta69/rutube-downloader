@@ -1,0 +1,64 @@
+# Python временные файлы
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Виртуальные окружения
+.venv/
+venv/
+ENV/
+env/
+
+# Файлы блокировки и кэши
+uv.lock
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+
+# Логи
+*.log
+*.log.*
+
+# IDE и редакторы
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Документация (опционально, можно оставить)
+# README.md
+
+# Docker файлы
+Dockerfile
+.dockerignore
+docker-compose.yml
+docker-compose.yaml
+
+# Временные файлы системы
+*.tmp
+*.temp
+*.bak
+*.backup
+Thumbs.db
+
+# Сборка и дистрибуция
+dist/
+build/
+*.egg-info/
+.eggs/
+
+# Переменные окружения (если есть)
+.env
+.env.local
+.env.*.local
+
