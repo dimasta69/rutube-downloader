@@ -2,6 +2,7 @@ class VideoDownloader {
     constructor() {
         this.ws = null;
         this.isDownloading = false;
+        this.completedFileId = null; // Сохраняем file_id из сообщения со статусом "completed"
         this.init();
     }
 
@@ -73,6 +74,14 @@ class VideoDownloader {
         this.ws.onmessage = (event) => {
             try {
                 const data = JSON.parse(event.data);
+                // Логируем для отладки
+                if (data.status === 'completed') {
+                    console.log('DEBUG: WebSocket completed message:', data);
+                    console.log('DEBUG: file_id from WebSocket:', data.file_id);
+                    // Сохраняем file_id из сообщения со статусом "completed" отдельно
+                    // чтобы гарантировать использование правильного значения
+                    this.completedFileId = data.file_id;
+                }
                 // Сохраняем последнее сообщение для отладки
                 window.lastWebSocketData = data;
                 this.handleStatusUpdate(data);
@@ -112,34 +121,58 @@ class VideoDownloader {
 
         // Обрабатываем завершение или ошибку
         if (status === 'completed') {
-            this.onDownloadComplete(file_id);
+            // Убеждаемся, что window.lastWebSocketData обновлен перед вызовом onDownloadComplete
+            // Передаем весь объект data, чтобы гарантировать использование правильного file_id
+            // из сообщения со статусом "completed"
+            console.log('DEBUG: handleStatusUpdate - completed status, data:', data);
+            console.log('DEBUG: handleStatusUpdate - file_id:', data.file_id);
+            this.onDownloadComplete(data);
         } else if (status === 'error') {
             this.showError(message || 'Произошла ошибка при загрузке');
             this.resetState();
         }
     }
 
-    onDownloadComplete(fileId) {
+    onDownloadComplete(completedData) {
         this.updateStatus('Видео успешно скачано! Теперь вы можете его скачать.', 100);
 
         const readyDownloadBtn = document.getElementById('readyDownloadBtn');
         
-        // Проверяем, есть ли fileId в последнем сообщении WebSocket
-        const lastData = window.lastWebSocketData || {};
+        // Приоритет 1: Используем сохраненный file_id из сообщения со статусом "completed"
+        // Это гарантирует использование правильного имени файла после переименования
+        let actualFileId = this.completedFileId;
         
-        // Используем fileId из параметра или из последнего сообщения
-        let actualFileId = fileId || lastData.file_id;
+        console.log('DEBUG: onDownloadComplete called with:', completedData);
+        console.log('DEBUG: this.completedFileId:', this.completedFileId);
+        console.log('DEBUG: completedData.file_id:', completedData.file_id);
         
-        // Если file_id все еще не найден, пытаемся извлечь из message
-        if (!actualFileId && lastData.message) {
-            const messageMatch = lastData.message.match(/скачано:\s*([^\s]+\.mp4)/i);
+        // Приоритет 2: Если не сохранен, используем file_id из переданных данных
+        if (!actualFileId) {
+            actualFileId = completedData.file_id;
+            console.log('DEBUG: using file_id from completedData:', actualFileId);
+        }
+        
+        // Приоритет 3: Если file_id не найден в данных, пытаемся извлечь из message
+        if (!actualFileId && completedData.message) {
+            const messageMatch = completedData.message.match(/скачано:\s*([^\s]+\.mp4)/i);
             if (messageMatch) {
                 actualFileId = messageMatch[1];
+                console.log('DEBUG: extracted file_id from message:', actualFileId);
             }
         }
         
+        // Приоритет 4: Если все еще не найдено, используем последние данные (fallback)
+        if (!actualFileId) {
+            const lastData = window.lastWebSocketData || {};
+            actualFileId = lastData.file_id;
+            console.log('DEBUG: using file_id from lastData (fallback):', actualFileId);
+        }
+        
+        console.log('DEBUG: final actualFileId:', actualFileId);
+        
         if (readyDownloadBtn && actualFileId) {
             const downloadUrl = `/api/v1/file/${encodeURIComponent(actualFileId)}`;
+            console.log('DEBUG: downloadUrl:', downloadUrl);
 
             readyDownloadBtn.style.display = 'inline-block';
             readyDownloadBtn.onclick = async () => {
@@ -246,6 +279,7 @@ class VideoDownloader {
     resetState() {
         this.isDownloading = false;
         this.setButtonLoading(false);
+        this.completedFileId = null; // Сбрасываем сохраненный file_id
         
         const readyDownloadBtn = document.getElementById('readyDownloadBtn');
         if (readyDownloadBtn) {
@@ -264,4 +298,5 @@ class VideoDownloader {
 document.addEventListener('DOMContentLoaded', () => {
     new VideoDownloader();
 });
+
 

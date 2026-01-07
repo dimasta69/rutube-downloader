@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import os
+import time
 from pathlib import Path
 from typing import Annotated
 
@@ -10,6 +12,7 @@ from fastapi import (
     BackgroundTasks,
     HTTPException,
     Query,
+    Request,
     WebSocket,
     WebSocketDisconnect,
 )
@@ -18,6 +21,41 @@ from fastapi.responses import FileResponse, StreamingResponse
 from services.video_service import VideoService
 
 router = APIRouter(prefix="/api/v1", tags=["video"])
+
+
+async def schedule_file_deletion(file_path: Path, delay_seconds: float) -> None:
+    """
+    Планирует удаление файла через указанное время.
+
+    Args:
+        file_path: Путь к файлу для удаления
+        delay_seconds: Задержка в секундах перед удалением
+    """
+    await asyncio.sleep(delay_seconds)
+    # Проверяем, что файл все еще существует перед удалением
+    if file_path.exists() and file_path.is_file():
+        try:
+            file_path.unlink(missing_ok=True)
+        except Exception:
+            # Игнорируем ошибки при удалении (файл может быть занят)
+            pass
+
+
+def get_file_ttl_seconds() -> float:
+    """
+    Получает время жизни файла в секундах из переменной окружения.
+
+    Returns:
+        Время жизни файла в секундах (по умолчанию 600 секунд = 10 минут)
+    """
+    ttl_minutes = os.getenv("FILE_TTL_MINUTES", "10")
+    try:
+        ttl_minutes = float(ttl_minutes)
+        if ttl_minutes <= 0:
+            ttl_minutes = 10
+    except (ValueError, TypeError):
+        ttl_minutes = 10
+    return ttl_minutes * 60  # Конвертируем минуты в секунды
 
 
 @router.get("/")
@@ -80,12 +118,19 @@ async def download_video(
 
 
 @router.get("/file/{filename}")
-async def get_downloaded_file(filename: str, background_tasks: BackgroundTasks) -> FileResponse:
+@router.head("/file/{filename}")
+async def get_downloaded_file(
+    filename: str,
+    request: Request,
+    background_tasks: BackgroundTasks
+) -> FileResponse:
     """
     Возвращает ранее скачанный видеофайл по имени.
 
     Имя файла берется из ответа WebSocket (file_id) и ищется в той же
     директории, что используется сервисом загрузки.
+
+    Поддерживает GET и HEAD методы для проверки доступности файла.
     """
     # Используем ту же логику определения директории, что и в VideoService
     download_path = os.getenv("DOWNLOAD_PATH")
@@ -106,7 +151,26 @@ async def get_downloaded_file(filename: str, background_tasks: BackgroundTasks) 
     if not file_path.exists() or not file_path.is_file():
         raise HTTPException(status_code=404, detail="Файл не найден")
 
-    # Настраиваем фоновой таск на удаление файла после отправки
+    # Проверяем, не истекло ли время жизни файла
+    ttl_seconds = get_file_ttl_seconds()
+    file_age = time.time() - file_path.stat().st_mtime
+    if file_age > ttl_seconds:
+        # Файл слишком старый, удаляем его
+        try:
+            file_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+        raise HTTPException(status_code=404, detail="Файл не найден")
+
+    # Для HEAD запросов не удаляем файл, так как это только проверка доступности
+    if request.method == "HEAD":
+        return FileResponse(
+            file_path,
+            media_type="video/mp4",
+            filename=filename,
+        )
+
+    # Для GET запросов удаляем файл сразу после отправки (первая скачка)
     background_tasks.add_task(file_path.unlink, missing_ok=True)
 
     return FileResponse(
@@ -174,14 +238,35 @@ async def download_video_status(websocket: WebSocket) -> None:
             # Скачиваем видео с отправкой статуса
             video_path = await video_service.download_and_get_path(url, status_callback, file_name)
 
+            # Убеждаемся, что файл существует
+            if not video_path.exists():
+                raise ValueError("Файл не был создан")
+
+            # Получаем актуальное имя файла из пути
+            # video_path должен содержать правильное имя после переименования
+            actual_filename = video_path.name
+            actual_file_path = str(video_path)
+
+            # Логируем для отладки
+            print(f"DEBUG: video_path = {video_path}")
+            print(f"DEBUG: actual_filename = {actual_filename}")
+            print(f"DEBUG: file_name (requested) = {file_name}")
+
+            # Планируем автоматическое удаление файла через FILE_TTL_MINUTES
+            ttl_seconds = get_file_ttl_seconds()
+            asyncio.create_task(schedule_file_deletion(video_path, ttl_seconds))
+
             # Отправляем финальный статус об успешном завершении
-            await websocket.send_json({
+            # Используем актуальное имя файла из пути
+            websocket_message = {
                 "status": "completed",
                 "progress": 100,
-                "message": f"Видео успешно скачано: {video_path.name}",
-                "file_id": video_path.name,
-                "file_path": str(video_path),
-            })
+                "message": f"Видео успешно скачано: {actual_filename}",
+                "file_id": actual_filename,
+                "file_path": actual_file_path,
+            }
+            print(f"DEBUG: Sending WebSocket message: {websocket_message}")
+            await websocket.send_json(websocket_message)
 
         except ValueError as e:
             await websocket.send_json({
