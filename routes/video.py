@@ -28,13 +28,15 @@ async def root() -> dict[str, str]:
 
 @router.get("/download")
 async def download_video(
-    url: Annotated[str, Query(description="URL видео с RuTube")]
+    url: Annotated[str, Query(description="URL видео с RuTube")],
+    file_name: Annotated[str | None, Query(description="Имя файла (без расширения, будет сохранено как .mp4)", default=None)] = None
 ) -> StreamingResponse:
     """
     Скачивает видео с RuTube и возвращает его как поток.
     
     Args:
         url: URL видео с RuTube (например, https://rutube.ru/video/...)
+        file_name: Опциональное имя файла (без расширения, будет сохранено как .mp4)
     
     Returns:
         StreamingResponse с видеофайлом в формате MP4
@@ -43,7 +45,7 @@ async def download_video(
     
     try:
         # Скачиваем видео через сервис
-        video_path = await video_service.download_and_get_path(url)
+        video_path = await video_service.download_and_get_path(url, None, file_name)
         
         # Создаем генератор для потоковой передачи файла
         stream_generator = video_service.create_stream_generator(video_path)
@@ -82,11 +84,19 @@ async def get_downloaded_file(filename: str, background_tasks: BackgroundTasks) 
     Имя файла берется из ответа WebSocket (file_id) и ищется в той же
     директории, что используется сервисом загрузки.
     """
+    # Используем ту же логику определения директории, что и в VideoService
     download_path = os.getenv("DOWNLOAD_PATH")
+    download_dir = None
+    
     if download_path:
         download_dir = Path(download_path)
-    else:
-        download_dir = Path.cwd()
+        # Проверяем, что директория существует и доступна
+        if not download_dir.exists() or not download_dir.is_dir():
+            download_dir = None
+    
+    if download_dir is None:
+        # Используем /tmp как fallback, если DOWNLOAD_PATH не задан или недоступен
+        download_dir = Path("/tmp")
 
     file_path = download_dir / filename
 
@@ -124,6 +134,7 @@ async def download_video_status(websocket: WebSocket) -> None:
         data = await websocket.receive_text()
         message = json.loads(data)
         url = message.get("url")
+        file_name = message.get("file_name")
         
         if not url:
             await websocket.send_json({
@@ -158,7 +169,7 @@ async def download_video_status(websocket: WebSocket) -> None:
         
         try:
             # Скачиваем видео с отправкой статуса
-            video_path = await video_service.download_and_get_path(url, status_callback)
+            video_path = await video_service.download_and_get_path(url, status_callback, file_name)
             
             # Отправляем финальный статус об успешном завершении
             await websocket.send_json({

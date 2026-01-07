@@ -27,6 +27,19 @@
                             autocomplete="off"
                         >
                     </div>
+                    <div class="input-group">
+                        <label for="fileName">Имя файла (опционально, будет сохранено в формате .mp4):</label>
+                        <input 
+                            type="text" 
+                            id="fileName" 
+                            name="fileName" 
+                            placeholder="мое_видео" 
+                            autocomplete="off"
+                            pattern="[^/\\?%*:|\"<>]+"
+                            title="Имя файла не должно содержать символы: / \ ? % * : | \" < >"
+                        >
+                        <small class="input-hint">Если не указано, будет использовано автоматическое имя</small>
+                    </div>
                     <button type="submit" id="downloadBtn" class="btn btn-primary">
                         <span class="btn-text">Скачать видео</span>
                         <span class="btn-loader" style="display: none;">

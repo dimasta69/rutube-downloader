@@ -14,8 +14,8 @@ services:
     #environment:
       # Можно переопределить или добавить переменные здесь
       # PYTHONUNBUFFERED: 1
-    #volumes:
-      # Опционально: монтируем директорию для сохранения файлов
-      # - ./downloads:/app/downloads
+    volumes:
+      # Монтируем директорию для сохранения файлов
+      - ./downloads:/app/downloads
     restart: unless-stopped
 

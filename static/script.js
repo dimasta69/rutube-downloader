@@ -42,10 +42,13 @@ class VideoDownloader {
             return;
         }
 
-        this.startDownload(url);
+        const fileNameInput = document.getElementById('fileName');
+        const fileName = fileNameInput.value.trim();
+
+        this.startDownload(url, fileName);
     }
 
-    startDownload(url) {
+    startDownload(url, fileName = null) {
         this.isDownloading = true;
         this.hideError();
         this.showStatus();
@@ -59,13 +62,19 @@ class VideoDownloader {
         this.ws = new WebSocket(wsUrl);
 
         this.ws.onopen = () => {
-            // Отправляем URL для начала загрузки
-            this.ws.send(JSON.stringify({ url }));
+            // Отправляем URL и имя файла для начала загрузки
+            const message = { url };
+            if (fileName) {
+                message.file_name = fileName;
+            }
+            this.ws.send(JSON.stringify(message));
         };
 
         this.ws.onmessage = (event) => {
             try {
                 const data = JSON.parse(event.data);
+                // Сохраняем последнее сообщение для отладки
+                window.lastWebSocketData = data;
                 this.handleStatusUpdate(data);
             } catch (error) {
                 console.error('Ошибка парсинга сообщения:', error);
@@ -114,13 +123,52 @@ class VideoDownloader {
         this.updateStatus('Видео успешно скачано! Теперь вы можете его скачать.', 100);
 
         const readyDownloadBtn = document.getElementById('readyDownloadBtn');
-        if (readyDownloadBtn && fileId) {
-            const downloadUrl = `/api/v1/file/${encodeURIComponent(fileId)}`;
+        
+        // Проверяем, есть ли fileId в последнем сообщении WebSocket
+        const lastData = window.lastWebSocketData || {};
+        
+        // Используем fileId из параметра или из последнего сообщения
+        let actualFileId = fileId || lastData.file_id;
+        
+        // Если file_id все еще не найден, пытаемся извлечь из message
+        if (!actualFileId && lastData.message) {
+            const messageMatch = lastData.message.match(/скачано:\s*([^\s]+\.mp4)/i);
+            if (messageMatch) {
+                actualFileId = messageMatch[1];
+            }
+        }
+        
+        if (readyDownloadBtn && actualFileId) {
+            const downloadUrl = `/api/v1/file/${encodeURIComponent(actualFileId)}`;
 
             readyDownloadBtn.style.display = 'inline-block';
-            readyDownloadBtn.onclick = () => {
-                // Открываем прямую ссылку на файл
-                window.location.href = downloadUrl;
+            readyDownloadBtn.onclick = async () => {
+                try {
+                    // Проверяем доступность файла перед скачиванием
+                    const response = await fetch(downloadUrl, { method: 'HEAD' });
+                    
+                    if (response.status === 404) {
+                        // Файл уже удален с сервера
+                        this.showError('Файл уже был удален с сервера. Пожалуйста, начните загрузку заново.');
+                        this.hideStatus();
+                        readyDownloadBtn.style.display = 'none';
+                        readyDownloadBtn.onclick = null;
+                        return;
+                    }
+                    
+                    if (!response.ok) {
+                        throw new Error(`Ошибка сервера: ${response.status}`);
+                    }
+                    
+                    // Если файл доступен, открываем прямую ссылку на скачивание
+                    window.location.href = downloadUrl;
+                } catch (error) {
+                    console.error('Ошибка при попытке скачать файл:', error);
+                    this.showError('Ошибка при попытке скачать файл. Файл может быть уже удален с сервера.');
+                    this.hideStatus();
+                    readyDownloadBtn.style.display = 'none';
+                    readyDownloadBtn.onclick = null;
+                }
             };
         }
 
@@ -130,12 +178,10 @@ class VideoDownloader {
             this.ws = null;
         }
 
-        // Через несколько секунд сбрасываем состояние
-        setTimeout(() => {
-            this.resetState();
-            this.hideStatus();
-            this.updateStatus('Готово к новой загрузке', 0);
-        }, 3000);
+        // Сбрасываем состояние кнопки, но не скрываем статус и кнопку скачивания,
+        // чтобы пользователь успел кликнуть по ссылке и видеть результат.
+        this.isDownloading = false;
+        this.setButtonLoading(false);
     }
 
     updateStatus(message, progress) {
