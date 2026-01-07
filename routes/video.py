@@ -1,10 +1,19 @@
 from __future__ import annotations
 
 import json
+import os
+from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
-from fastapi.responses import StreamingResponse
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    HTTPException,
+    Query,
+    WebSocket,
+    WebSocketDisconnect,
+)
+from fastapi.responses import FileResponse, StreamingResponse
 
 from services.video_service import VideoService
 
@@ -65,6 +74,36 @@ async def download_video(
         )
 
 
+@router.get("/file/{filename}")
+async def get_downloaded_file(filename: str, background_tasks: BackgroundTasks) -> FileResponse:
+    """
+    Возвращает ранее скачанный видеофайл по имени.
+    
+    Имя файла берется из ответа WebSocket (file_id) и ищется в той же
+    директории, что используется сервисом загрузки.
+    """
+    download_path = os.getenv("DOWNLOAD_PATH")
+    if download_path:
+        download_dir = Path(download_path)
+    else:
+        download_dir = Path.cwd()
+
+    file_path = download_dir / filename
+
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(status_code=404, detail="Файл не найден")
+    
+    # Настраиваем фоновой таск на удаление файла после отправки
+    background_tasks.add_task(file_path.unlink, missing_ok=True)
+
+    return FileResponse(
+        file_path,
+        media_type="video/mp4",
+        filename=filename,
+        background=background_tasks,
+    )
+
+
 @router.websocket("/download/status")
 async def download_video_status(websocket: WebSocket) -> None:
     """
@@ -110,7 +149,7 @@ async def download_video_status(websocket: WebSocket) -> None:
             """Callback для отправки статуса через WebSocket."""
             try:
                 await websocket.send_json(status_data)
-            except Exception as e:
+            except Exception:
                 # Если WebSocket закрыт, просто игнорируем ошибку
                 pass
         
@@ -126,7 +165,8 @@ async def download_video_status(websocket: WebSocket) -> None:
                 "status": "completed",
                 "progress": 100,
                 "message": f"Видео успешно скачано: {video_path.name}",
-                "file_path": str(video_path)
+                "file_id": video_path.name,
+                "file_path": str(video_path),
             })
             
         except ValueError as e:
@@ -167,4 +207,5 @@ async def download_video_status(websocket: WebSocket) -> None:
         except Exception:
             # WebSocket уже закрыт
             pass
-
+    
+        

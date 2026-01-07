@@ -1,20 +1,20 @@
 version: '3.8'
 
 services:
-  rutube_loader:
+  rutube-downloader:
     build:
       context: .
       dockerfile: Dockerfile
-    image: rutube_loader:latest
-    container_name: rutube_app
+    image: rutube-downloader:latest
+    container_name: rutube-downloader
     ports:
       - "8000:8000"
     env_file:
       - .env  # Загружает переменные из .env файла
-    environment:
+    #environment:
       # Можно переопределить или добавить переменные здесь
       # PYTHONUNBUFFERED: 1
-    volumes:
+    #volumes:
       # Опционально: монтируем директорию для сохранения файлов
       # - ./downloads:/app/downloads
     restart: unless-stopped

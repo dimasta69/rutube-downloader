@@ -9,10 +9,17 @@ class VideoDownloader {
         const form = document.getElementById('downloadForm');
         const closeStatusBtn = document.getElementById('closeStatusBtn');
         const closeErrorBtn = document.getElementById('closeErrorBtn');
+        const readyDownloadBtn = document.getElementById('readyDownloadBtn');
 
         form.addEventListener('submit', (e) => this.handleSubmit(e));
         closeStatusBtn.addEventListener('click', () => this.hideStatus());
         closeErrorBtn.addEventListener('click', () => this.hideError());
+
+        // Кнопка скачивания готового файла настраивается динамически
+        if (readyDownloadBtn) {
+            readyDownloadBtn.style.display = 'none';
+            readyDownloadBtn.onclick = null;
+        }
     }
 
     async handleSubmit(e) {
@@ -83,7 +90,7 @@ class VideoDownloader {
     }
 
     handleStatusUpdate(data) {
-        const { status, progress, message, file_path } = data;
+        const { status, progress, message, file_id } = data;
 
         // Обновляем статус
         if (message) {
@@ -96,28 +103,26 @@ class VideoDownloader {
 
         // Обрабатываем завершение или ошибку
         if (status === 'completed') {
-            this.onDownloadComplete(file_path);
+            this.onDownloadComplete(file_id);
         } else if (status === 'error') {
             this.showError(message || 'Произошла ошибка при загрузке');
             this.resetState();
         }
     }
 
-    onDownloadComplete(file_path) {
-        this.updateStatus('Видео успешно скачано! Начинаем загрузку файла...', 100);
-        
-        // Скачиваем файл через обычный GET запрос
-        const urlInput = document.getElementById('videoUrl');
-        const videoUrl = urlInput.value.trim();
-        const downloadUrl = `/api/v1/download?url=${encodeURIComponent(videoUrl)}`;
-        
-        // Создаем временную ссылку для скачивания
-        const link = document.createElement('a');
-        link.href = downloadUrl;
-        link.download = '';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+    onDownloadComplete(fileId) {
+        this.updateStatus('Видео успешно скачано! Теперь вы можете его скачать.', 100);
+
+        const readyDownloadBtn = document.getElementById('readyDownloadBtn');
+        if (readyDownloadBtn && fileId) {
+            const downloadUrl = `/api/v1/file/${encodeURIComponent(fileId)}`;
+
+            readyDownloadBtn.style.display = 'inline-block';
+            readyDownloadBtn.onclick = () => {
+                // Открываем прямую ссылку на файл
+                window.location.href = downloadUrl;
+            };
+        }
 
         // Закрываем WebSocket
         if (this.ws) {
@@ -195,6 +200,12 @@ class VideoDownloader {
     resetState() {
         this.isDownloading = false;
         this.setButtonLoading(false);
+        
+        const readyDownloadBtn = document.getElementById('readyDownloadBtn');
+        if (readyDownloadBtn) {
+            readyDownloadBtn.style.display = 'none';
+            readyDownloadBtn.onclick = null;
+        }
         
         if (this.ws) {
             this.ws.close();
