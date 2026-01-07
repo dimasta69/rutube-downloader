@@ -47,6 +47,9 @@ RUN pip install --no-cache-dir uv
 # Устанавливаем рабочую директорию
 WORKDIR /app
 
+# Создаем директорию для загрузок
+RUN mkdir -p /app/downloads && chmod 777 /app/downloads
+
 # Копируем все файлы проекта
 COPY . .
 

@@ -115,6 +115,13 @@ main {
     opacity: 0.6;
 }
 
+.input-hint {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    opacity: 0.8;
+    margin-top: 4px;
+}
+
 .btn {
     padding: 14px 24px;
     border: none;
