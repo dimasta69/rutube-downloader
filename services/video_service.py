@@ -96,12 +96,24 @@ class VideoService:
             download_dir = Path("/tmp")
             download_dir.mkdir(parents=True, exist_ok=True)
         
-        # Обрабатываем имя файла, если оно указано
+        # Обрабатываем имя файла
+        # Всегда переименовываем файл, даже если имя не указано (используем дефолтное)
         final_filename = None
-        if file_name:
-            sanitized_name = VideoService._sanitize_filename(file_name)
+        if file_name and file_name.strip():
+            sanitized_name = VideoService._sanitize_filename(file_name.strip())
             if sanitized_name:
                 final_filename = f"{sanitized_name}.mp4"
+            else:
+                # Если имя файла после очистки пустое, используем дефолтное имя
+                final_filename = "video.mp4"
+        
+        # Если имя файла не указано, используем дефолтное имя
+        if not final_filename:
+            final_filename = "video.mp4"
+        
+        # Логируем для отладки
+        print(f"DEBUG: file_name (input) = {file_name}")
+        print(f"DEBUG: final_filename = {final_filename}")
         
         # Создаем временный файл для сохранения видео
         with tempfile.NamedTemporaryFile(
@@ -124,7 +136,8 @@ class VideoService:
                 temp_path.unlink()
             raise ValueError("Видеофайл не был создан или пуст")
         
-        # Если указано имя файла, переименовываем
+        # Всегда переименовываем файл из временного в финальное имя
+        # final_filename всегда должен быть установлен (либо из file_name, либо "video.mp4")
         if final_filename:
             final_path = download_dir / final_filename
             # Если файл с таким именем уже существует, добавляем номер
@@ -136,14 +149,47 @@ class VideoService:
                 counter += 1
             
             try:
+                # Пытаемся переименовать файл
                 temp_path.rename(final_path)
+                # Убеждаемся, что возвращаем правильный путь с правильным именем
+                print(f"Файл успешно переименован: {temp_path.name} -> {final_path.name}")
                 return final_path
             except (OSError, PermissionError) as e:
-                # Если не удалось переименовать, просто возвращаем временный файл
-                # Это лучше, чем падать с ошибкой
-                return temp_path
-        
-        return temp_path
+                # Если не удалось переименовать, пытаемся скопировать файл
+                # Это может помочь, если файл занят или есть проблемы с правами
+                try:
+                    import shutil
+                    shutil.copy2(temp_path, final_path)
+                    # Удаляем временный файл после успешного копирования
+                    try:
+                        temp_path.unlink()
+                    except Exception:
+                        pass
+                    return final_path
+                except Exception as copy_error:
+                    # Если и копирование не удалось, пытаемся использовать правильное имя
+                    # путем создания жесткой ссылки или просто возвращаем путь с правильным именем
+                    # Но файл физически останется с временным именем
+                    print(f"Ошибка: не удалось переименовать или скопировать файл '{temp_path}' в '{final_path}': {e}, {copy_error}")
+                    # Возвращаем путь с правильным именем, даже если файл физически не переименован
+                    # Это позволит использовать правильное имя в ответе
+                    # Но файл нужно будет искать по временному имени
+                    # Лучше вернуть путь с правильным именем и попытаться создать ссылку
+                    try:
+                        import shutil
+                        # Пытаемся создать жесткую ссылку с правильным именем
+                        final_path.unlink(missing_ok=True)  # Удаляем, если существует
+                        os.link(temp_path, final_path)
+                        return final_path
+                    except Exception:
+                        # Если ничего не помогло, возвращаем временный файл
+                        # Но логируем предупреждение
+                        print(f"Критическая ошибка: файл останется с временным именем '{temp_path.name}' вместо '{final_filename}'")
+                        return temp_path
+        else:
+            # Это не должно происходить, так как final_filename всегда должен быть установлен
+            print(f"Предупреждение: final_filename не установлен, файл останется с временным именем '{temp_path.name}'")
+            return temp_path
     
     @staticmethod
     def create_stream_generator(video_path: Path) -> Iterator[bytes]:

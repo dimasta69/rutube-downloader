@@ -329,7 +329,9 @@ async def download_video(
         await asyncio.to_thread(shutil.rmtree, temp_dir)
         
         print(f"Видео успешно скачано: {output_path}")
-        await send_status("completed", 100, f"Видео успешно скачано: {output_path.name}")
+        # НЕ отправляем сообщение "completed" здесь, так как финальное сообщение
+        # с правильным именем файла будет отправлено из routes/video.py после переименования
+        # await send_status("completed", 100, f"Видео успешно скачано: {output_path.name}")
         return True
     except Exception as e:
         print(f"Ошибка при объединении сегментов: {e}")
