@@ -77,6 +77,47 @@
                     <button id="closeErrorBtn" class="btn btn-secondary">Закрыть</button>
                 </div>
             </div>
+
+            <div class="download-section" style="margin-top: 32px;">
+                <h2>Скачать файл по имени</h2>
+                <form id="downloadByNameForm" class="download-form">
+                    <div class="input-group">
+                        <label for="fileNameInput">Имя файла:</label>
+                        <input 
+                            type="text" 
+                            id="fileNameInput" 
+                            name="fileNameInput" 
+                            placeholder="video.mp4" 
+                            required
+                            autocomplete="off"
+                        >
+                        <small class="input-hint">Введите имя файла (например: video.mp4)</small>
+                    </div>
+                    <div class="input-group checkbox-group" style="margin-bottom: 12px;">
+                        <label>
+                            Поиск по частичному совпадению имени
+                            <input 
+                                type="checkbox" 
+                                id="searchMode" 
+                                name="searchMode"
+                            >
+                        </label>
+                    </div>
+                    <div class="buttons-group">
+                        <button type="submit" id="downloadByNameBtn" class="btn btn-primary">
+                            Скачать файл
+                        </button>
+                        <button type="button" id="listFilesBtn" class="btn btn-secondary">
+                            Показать список файлов
+                        </button>
+                    </div>
+                </form>
+
+                <div id="filesListContainer" class="files-list-container" style="display: none; margin-top: 24px;">
+                    <h3>Доступные файлы:</h3>
+                    <div id="filesList" class="files-list"></div>
+                </div>
+            </div>
         </main>
 
         <footer>

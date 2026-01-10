@@ -122,6 +122,30 @@ main {
     margin-top: 4px;
 }
 
+.checkbox-group label {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+}
+
+.checkbox-group input[type="checkbox"] {
+    width: auto;
+    margin: 0;
+}
+
+.buttons-group {
+    display: flex;
+    gap: 12px;
+    width: 100%;
+}
+
+.buttons-group .btn {
+    flex: 1 1 0;
+    min-width: 0;
+}
+
 .btn {
     padding: 14px 24px;
     border: none;
@@ -398,6 +422,14 @@ footer {
 
     .download-form {
         gap: 15px;
+    }
+
+    .buttons-group {
+        flex-direction: column;
+    }
+
+    .buttons-group .btn {
+        width: 100%;
     }
 }
 

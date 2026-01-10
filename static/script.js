@@ -8,11 +8,19 @@ class VideoDownloader {
 
     init() {
         const form = document.getElementById('downloadForm');
+        const downloadByNameForm = document.getElementById('downloadByNameForm');
+        const listFilesBtn = document.getElementById('listFilesBtn');
         const closeStatusBtn = document.getElementById('closeStatusBtn');
         const closeErrorBtn = document.getElementById('closeErrorBtn');
         const readyDownloadBtn = document.getElementById('readyDownloadBtn');
 
         form.addEventListener('submit', (e) => this.handleSubmit(e));
+        if (downloadByNameForm) {
+            downloadByNameForm.addEventListener('submit', (e) => this.handleDownloadByName(e));
+        }
+        if (listFilesBtn) {
+            listFilesBtn.addEventListener('click', () => this.loadFilesList());
+        }
         closeStatusBtn.addEventListener('click', () => this.hideStatus());
         closeErrorBtn.addEventListener('click', () => this.hideError());
 
@@ -290,6 +298,103 @@ class VideoDownloader {
         if (this.ws) {
             this.ws.close();
             this.ws = null;
+        }
+    }
+
+    async handleDownloadByName(e) {
+        e.preventDefault();
+        
+        const fileNameInput = document.getElementById('fileNameInput');
+        const searchMode = document.getElementById('searchMode');
+        const fileName = fileNameInput.value.trim();
+
+        if (!fileName) {
+            this.showError('Пожалуйста, введите имя файла');
+            return;
+        }
+
+        try {
+            let downloadUrl;
+            if (searchMode && searchMode.checked) {
+                // Используем поиск по частичному совпадению
+                downloadUrl = `/api/v1/file/${encodeURIComponent(fileName)}?search=true`;
+            } else {
+                // Точное совпадение имени
+                downloadUrl = `/api/v1/file/${encodeURIComponent(fileName)}`;
+            }
+
+            // Проверяем доступность файла перед скачиванием
+            const response = await fetch(downloadUrl, { method: 'HEAD' });
+            
+            if (response.status === 404) {
+                this.showError('Файл не найден. Проверьте имя файла или используйте поиск по частичному совпадению.');
+                return;
+            }
+            
+            if (!response.ok) {
+                throw new Error(`Ошибка сервера: ${response.status}`);
+            }
+            
+            // Если файл доступен, открываем прямую ссылку на скачивание
+            window.location.href = downloadUrl;
+        } catch (error) {
+            console.error('Ошибка при попытке скачать файл:', error);
+            this.showError('Ошибка при попытке скачать файл: ' + error.message);
+        }
+    }
+
+    async loadFilesList() {
+        const filesListContainer = document.getElementById('filesListContainer');
+        const filesList = document.getElementById('filesList');
+        
+        try {
+            filesList.innerHTML = '<p>Загрузка списка файлов...</p>';
+            filesListContainer.style.display = 'block';
+            
+            const response = await fetch('/api/v1/files');
+            
+            if (!response.ok) {
+                throw new Error(`Ошибка сервера: ${response.status}`);
+            }
+            
+            const data = await response.json();
+            const files = data.files || [];
+            
+            if (files.length === 0) {
+                filesList.innerHTML = '<p>Нет доступных файлов</p>';
+                return;
+            }
+            
+            filesList.innerHTML = '';
+            files.forEach(file => {
+                const fileItem = document.createElement('div');
+                fileItem.className = 'file-item';
+                fileItem.style.cssText = 'padding: 12px; margin: 8px 0; border: 1px solid #ddd; border-radius: 4px; display: flex; justify-content: space-between; align-items: center;';
+                
+                const fileInfo = document.createElement('div');
+                const fileSizeMB = (file.size / (1024 * 1024)).toFixed(2);
+                const fileAgeMinutes = Math.floor(file.age_seconds / 60);
+                const fileAgeSeconds = Math.floor(file.age_seconds % 60);
+                fileInfo.innerHTML = `
+                    <strong>${file.name}</strong><br>
+                    <small>Размер: ${fileSizeMB} MB | Возраст: ${fileAgeMinutes} мин ${fileAgeSeconds} сек</small>
+                `;
+                
+                const downloadBtn = document.createElement('button');
+                downloadBtn.className = 'btn btn-primary';
+                downloadBtn.textContent = 'Скачать';
+                downloadBtn.style.cssText = 'margin-left: 12px;';
+                downloadBtn.onclick = () => {
+                    window.location.href = `/api/v1/file/${encodeURIComponent(file.name)}`;
+                };
+                
+                fileItem.appendChild(fileInfo);
+                fileItem.appendChild(downloadBtn);
+                filesList.appendChild(fileItem);
+            });
+        } catch (error) {
+            console.error('Ошибка при загрузке списка файлов:', error);
+            filesList.innerHTML = `<p style="color: red;">Ошибка при загрузке списка файлов: ${error.message}</p>`;
         }
     }
 }
