@@ -5,7 +5,7 @@ import json
 import os
 import time
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import (
     APIRouter,
@@ -21,6 +21,29 @@ from fastapi.responses import FileResponse, StreamingResponse
 from services.video_service import VideoService
 
 router = APIRouter(prefix="/api/v1", tags=["video"])
+
+
+def get_download_directory() -> Path:
+    """
+    Возвращает директорию для загрузки файлов.
+    
+    Returns:
+        Path к директории загрузки
+    """
+    download_path = os.getenv("DOWNLOAD_PATH")
+    download_dir = None
+
+    if download_path:
+        download_dir = Path(download_path)
+        # Проверяем, что директория существует и доступна
+        if not download_dir.exists() or not download_dir.is_dir():
+            download_dir = None
+
+    if download_dir is None:
+        # Используем /tmp как fallback, если DOWNLOAD_PATH не задан или недоступен
+        download_dir = Path("/tmp")
+
+    return download_dir
 
 
 async def schedule_file_deletion(file_path: Path, delay_seconds: float) -> None:
@@ -41,20 +64,28 @@ async def schedule_file_deletion(file_path: Path, delay_seconds: float) -> None:
             pass
 
 
-def get_file_ttl_seconds() -> float:
+def get_file_unused_ttl_seconds() -> float:
     """
-    Получает время жизни файла в секундах из переменной окружения.
+    Получает время жизни неиспользованного файла в секундах из переменной окружения.
+    
+    Файл будет автоматически удален, если его не скачали в течение этого времени.
 
     Returns:
-        Время жизни файла в секундах (по умолчанию 600 секунд = 10 минут)
+        Время жизни файла в секундах (по умолчанию 180 секунд = 3 минуты)
     """
-    ttl_minutes = os.getenv("FILE_TTL_MINUTES", "10")
+    # Сначала проверяем новую переменную FILE_UNUSED_TTL_MINUTES
+    ttl_minutes = os.getenv("FILE_UNUSED_TTL_MINUTES")
+    
+    # Если не задана, проверяем старую переменную для обратной совместимости
+    if ttl_minutes is None:
+        ttl_minutes = os.getenv("FILE_TTL_MINUTES", "3")
+    
     try:
         ttl_minutes = float(ttl_minutes)
         if ttl_minutes <= 0:
-            ttl_minutes = 10
+            ttl_minutes = 3
     except (ValueError, TypeError):
-        ttl_minutes = 10
+        ttl_minutes = 3
     return ttl_minutes * 60  # Конвертируем минуты в секунды
 
 
@@ -117,52 +148,171 @@ async def download_video(
         )
 
 
+@router.get("/files")
+async def list_files() -> dict[str, list[dict[str, Any]]]:
+    """
+    Возвращает список всех доступных видеофайлов с информацией о них.
+    
+    Returns:
+        Словарь с массивом файлов, каждый содержит name, size, created_at
+    """
+    download_dir = get_download_directory()
+    ttl_seconds = get_file_unused_ttl_seconds()
+    current_time = time.time()
+    
+    files = []
+    
+    try:
+        # Получаем все .mp4 файлы в директории
+        for file_path in download_dir.glob("*.mp4"):
+            if not file_path.is_file():
+                continue
+                
+            # Проверяем, не истекло ли время жизни файла
+            file_age = current_time - file_path.stat().st_mtime
+            if file_age > ttl_seconds:
+                # Файл слишком старый, удаляем его
+                try:
+                    file_path.unlink(missing_ok=True)
+                except Exception:
+                    pass
+                continue
+            
+            file_info = {
+                "name": file_path.name,
+                "size": file_path.stat().st_size,
+                "created_at": file_path.stat().st_mtime,
+                "age_seconds": file_age,
+            }
+            files.append(file_info)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Ошибка при получении списка файлов: {str(e)}"
+        )
+    
+    return {"files": files}
+
+
+@router.get("/files/search")
+async def search_file_by_name(
+    name: Annotated[str, Query(description="Часть имени файла для поиска (case-insensitive)")]
+) -> dict[str, list[dict[str, Any]]]:
+    """
+    Ищет файлы по частичному совпадению имени.
+    
+    Args:
+        name: Часть имени файла для поиска (без учета регистра)
+    
+    Returns:
+        Словарь с массивом найденных файлов
+    """
+    download_dir = get_download_directory()
+    ttl_seconds = get_file_unused_ttl_seconds()
+    current_time = time.time()
+    
+    search_name_lower = name.lower()
+    found_files = []
+    
+    try:
+        # Ищем все .mp4 файлы, содержащие указанное имя
+        for file_path in download_dir.glob("*.mp4"):
+            if not file_path.is_file():
+                continue
+            
+            file_name_lower = file_path.name.lower()
+            
+            # Проверяем, содержит ли имя файла искомую строку
+            if search_name_lower not in file_name_lower:
+                continue
+                
+            # Проверяем, не истекло ли время жизни файла
+            file_age = current_time - file_path.stat().st_mtime
+            if file_age > ttl_seconds:
+                # Файл слишком старый, удаляем его
+                try:
+                    file_path.unlink(missing_ok=True)
+                except Exception:
+                    pass
+                continue
+            
+            file_info = {
+                "name": file_path.name,
+                "size": file_path.stat().st_size,
+                "created_at": file_path.stat().st_mtime,
+                "age_seconds": file_age,
+            }
+            found_files.append(file_info)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Ошибка при поиске файлов: {str(e)}"
+        )
+    
+    return {"files": found_files}
+
+
 @router.get("/file/{filename}")
 @router.head("/file/{filename}")
 async def get_downloaded_file(
     filename: str,
     request: Request,
-    background_tasks: BackgroundTasks
+    background_tasks: BackgroundTasks,
+    search: Annotated[bool, Query(description="Если True, ищет файл по частичному совпадению имени")] = False
 ) -> FileResponse:
     """
     Возвращает ранее скачанный видеофайл по имени.
+
+    Если search=True, ищет первый файл, имя которого содержит указанное значение.
 
     Имя файла берется из ответа WebSocket (file_id) и ищется в той же
     директории, что используется сервисом загрузки.
 
     Поддерживает GET и HEAD методы для проверки доступности файла.
     """
-    # Используем ту же логику определения директории, что и в VideoService
-    download_path = os.getenv("DOWNLOAD_PATH")
-    download_dir = None
+    download_dir = get_download_directory()
+    
+    # Если включен режим поиска, ищем файл по частичному совпадению
+    if search:
+        filename_lower = filename.lower()
+        file_path = None
+        ttl_seconds = get_file_unused_ttl_seconds()
+        current_time = time.time()
+        
+        # Ищем первый подходящий файл
+        for path in download_dir.glob("*.mp4"):
+            if not path.is_file():
+                continue
+            
+            if filename_lower in path.name.lower():
+                # Проверяем, не истекло ли время жизни файла
+                file_age = current_time - path.stat().st_mtime
+                if file_age <= ttl_seconds:
+                    file_path = path
+                    filename = path.name  # Обновляем filename для ответа
+                    break
+        
+        if file_path is None:
+            raise HTTPException(status_code=404, detail=f"Файл, содержащий '{filename}', не найден")
+    else:
+        # Точное совпадение имени файла
+        file_path = download_dir / filename
 
-    if download_path:
-        download_dir = Path(download_path)
-        # Проверяем, что директория существует и доступна
-        if not download_dir.exists() or not download_dir.is_dir():
-            download_dir = None
+        if not file_path.exists() or not file_path.is_file():
+            raise HTTPException(status_code=404, detail="Файл не найден")
 
-    if download_dir is None:
-        # Используем /tmp как fallback, если DOWNLOAD_PATH не задан или недоступен
-        download_dir = Path("/tmp")
+        # Проверяем, не истекло ли время жизни файла
+        ttl_seconds = get_file_unused_ttl_seconds()
+        file_age = time.time() - file_path.stat().st_mtime
+        if file_age > ttl_seconds:
+            # Файл слишком старый, удаляем его
+            try:
+                file_path.unlink(missing_ok=True)
+            except Exception:
+                pass
+            raise HTTPException(status_code=404, detail="Файл не найден")
 
-    file_path = download_dir / filename
-
-    if not file_path.exists() or not file_path.is_file():
-        raise HTTPException(status_code=404, detail="Файл не найден")
-
-    # Проверяем, не истекло ли время жизни файла
-    ttl_seconds = get_file_ttl_seconds()
-    file_age = time.time() - file_path.stat().st_mtime
-    if file_age > ttl_seconds:
-        # Файл слишком старый, удаляем его
-        try:
-            file_path.unlink(missing_ok=True)
-        except Exception:
-            pass
-        raise HTTPException(status_code=404, detail="Файл не найден")
-
-    # Для HEAD запросов не удаляем файл, так как это только проверка доступности
+    # Для HEAD запросов просто возвращаем информацию о файле без удаления
     if request.method == "HEAD":
         return FileResponse(
             file_path,
@@ -170,7 +320,7 @@ async def get_downloaded_file(
             filename=filename,
         )
 
-    # Для GET запросов удаляем файл сразу после отправки (первая скачка)
+    # Для GET запросов удаляем файл сразу после отправки (однократное скачивание)
     background_tasks.add_task(file_path.unlink, missing_ok=True)
 
     return FileResponse(
@@ -252,8 +402,9 @@ async def download_video_status(websocket: WebSocket) -> None:
             print(f"DEBUG: actual_filename = {actual_filename}")
             print(f"DEBUG: file_name (requested) = {file_name}")
 
-            # Планируем автоматическое удаление файла через FILE_TTL_MINUTES
-            ttl_seconds = get_file_ttl_seconds()
+            # Планируем автоматическое удаление файла, если он не был скачан
+            # через указанное время (FILE_UNUSED_TTL_MINUTES, по умолчанию 3 минуты)
+            ttl_seconds = get_file_unused_ttl_seconds()
             asyncio.create_task(schedule_file_deletion(video_path, ttl_seconds))
 
             # Отправляем финальный статус об успешном завершении
